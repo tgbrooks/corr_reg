@@ -145,10 +145,10 @@ def split_array(array, lengths):
 
 
 rng = np.random.default_rng(1)
-N = 1000
-T = jnp.linspace(0.0,2*np.pi,101)
+N_SAMPLES = 100
+T = jnp.linspace(0.0, 2*np.pi, N_SAMPLES)
 def true_cov(t):
-    rho = jnp.tanh(0.3-0.3*np.cos(t))
+    rho = jnp.tanh(0.3-0.3*np.cos(t)) # correlation
     sigma_x = jnp.exp(0.5*np.sin(t))
     sigma_y = jnp.exp(0.5)
     return jnp.array([[sigma_x**2, sigma_x*sigma_y*rho], [sigma_x*sigma_y*rho, sigma_y**2]])
