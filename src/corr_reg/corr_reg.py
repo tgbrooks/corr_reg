@@ -74,7 +74,7 @@ class CorrReg:
         #G = H_inv @ X @ XHiX_inv
         G = jnp.einsum("ijk,il,kslm->ijm", H_inv, X, XHiX_inv)
         beta_hat = jnp.moveaxis(G, 0, 2) @ self.dependent_data[:, :, None]
-        Y_hat = jnp.einsum("ij,jkl->ji", X ,beta_hat)
+        Y_hat = jnp.einsum("ij,kjl->ki", X ,beta_hat)
         resid = (self.dependent_data - Y_hat) # Y - Y_hat
         mahalanobis = jnp.einsum("ji,ijk,ki->i", resid, H_inv, resid) # (y - y_hat)^T @ H_inv @ (y - y_hat)
         log_like = -1/2*(
@@ -122,20 +122,12 @@ class CorrReg:
             return val
         res = scipy.optimize.minimize(
             fun = val_and_jac,
-            #fun = val,
             x0 = init_params,
-            method = "BFGS",
-            #method = "Newton-CG",
+            method = "Newton-CG",
             jac = True,
-            #hess = hess,
+            hess = hess,
+            tol = 1e-2,
         )
-
-        #res = jax.scipy.optimize.minimize(
-        #    fun = self.objective,
-        #    x0 = init_params,
-        #    method = "BFGS",
-        #)
-        #print(res)
 
         # parameters and error value
         self.params = res.x
@@ -154,21 +146,25 @@ def split_array(array, lengths):
 
 rng = np.random.default_rng(1)
 N = 1000
-T = jnp.linspace(0.0,1.0,1001)
+T = jnp.linspace(0.0,2*np.pi,101)
 def true_cov(t):
-    rho = jnp.tanh(0.3-0.3*t)
-    sigma_x = jnp.exp(0.5)
-    sigma_y = jnp.exp(0.0)
+    rho = jnp.tanh(0.3-0.3*np.cos(t))
+    sigma_x = jnp.exp(0.5*np.sin(t))
+    sigma_y = jnp.exp(0.5)
     return jnp.array([[sigma_x**2, sigma_x*sigma_y*rho], [sigma_x*sigma_y*rho, sigma_y**2]])
-test_data = jnp.array([rng.multivariate_normal( [0,0], true_cov(time)) for time in T])
-df = pandas.DataFrame(dict(x = test_data[:,0], y = test_data[:,1], t = T))
+test_data = jnp.array([rng.multivariate_normal( [5+np.sin(time), 3+np.cos(time)], true_cov(time)) for time in T])
+df = pandas.DataFrame(dict(
+    x = test_data[:,0],
+    y = test_data[:,1],
+    t = T,
+))
 
 cr = CorrReg(
     data = df,
     x_var = "x",
     y_var = "y",
-    mean_model = "t",
-    variance_model = "1",
-    corr_model = "t",
+    mean_model = "np.cos(t) + np.sin(t)",
+    variance_model = "np.cos(t) + np.sin(t)",
+    corr_model = "np.cos(t) + np.sin(t)",
 ).fit()
 print(cr.opt_result)
