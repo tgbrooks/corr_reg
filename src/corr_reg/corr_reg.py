@@ -8,19 +8,19 @@ class CorrReg:
     def __init__(
             self,
             data,
-            x_var:str,
-            y_var:str,
+            y1_var:str,
+            y2_var:str,
             mean_model: str,
             variance_model: str,
             corr_model: str,
         ):
         self.data = data
         self.dependent_data = np.vstack((
-            np.asarray(self.data[x_var]),
-            np.asarray(self.data[y_var]),
+            np.asarray(self.data[y1_var]),
+            np.asarray(self.data[y2_var]),
         ))
-        self.x_var = x_var
-        self.y_var = y_var
+        self.y1_var = y1_var
+        self.y2_var = y2_var
 
         self.mean_model = mean_model
         self.mean_model_dmat = patsy.dmatrix(self.mean_model, self.data)
@@ -33,7 +33,7 @@ class CorrReg:
 
         #self.params, self.loglikelihood = self.fit()
 
-    def reml_loglikelihood(self, fit_corr):
+    def reml_loglikelihood(self, cov):
         ''' Log-likelihood of the given correlation parameters after restricting to ReML
          
         See "Bayesian inference for variance components using only error contrasts" Harville 1974
@@ -42,16 +42,14 @@ class CorrReg:
         https://xiuming.info/docs/tutorials/reml.pdf
         '''
 
-        rho = fit_corr[0,:]
-        sigma_x = fit_corr[1,:]
-        sigma_y = fit_corr[2,:]
+        rho, sigma_y1, sigma_y2 = cov
         N_samples = rho.shape[0]
 
         k = self.mean_model_dmat.shape[1] # Number of predictors for mean model
 
         H = np.moveaxis(
-            np.array([[sigma_x**2, sigma_x*sigma_y*rho],
-                       [sigma_x*sigma_y*rho, sigma_y**2]]),
+            np.array([[sigma_y1**2, sigma_y1*sigma_y2*rho],
+                       [sigma_y1*sigma_y2*rho, sigma_y2**2]]),
             2,
             0
         )
@@ -81,31 +79,35 @@ class CorrReg:
         ) / N_samples
         return log_like
 
-    def param_to_fit(self, params):
-        ''' converts parameters to fit values and fit correlation matrix '''
+    def params_to_cov(self, params):
+        ''' converts parameters to cov components
+         
+        Returns: rho (correlation), sigma_y1 and sigma_y2 (variances) '''
         # Separate out the parts of the params
         param_part_lengths = [self.variance_model_dmat.shape[1], self.variance_model_dmat.shape[1], self.corr_model_dmat.shape[1]]
-        x_variance_params, y_variance_params, corr_params = split_array(params, param_part_lengths)
+        y1_variance_params, y2_variance_params, corr_params = split_array(params, param_part_lengths)
         rho = np.tanh(self.corr_model_dmat @ corr_params)
-        sigma_x = np.exp(self.variance_model_dmat @ x_variance_params)
-        sigma_y = np.exp(self.variance_model_dmat @ y_variance_params)
-        cov_structure = np.array([rho, sigma_x, sigma_y])
+        sigma_y1 = np.exp(self.variance_model_dmat @ y1_variance_params)
+        sigma_y2 = np.exp(self.variance_model_dmat @ y2_variance_params)
+        cov_structure = (rho, sigma_y1, sigma_y2)
         return cov_structure
 
     def objective(self, params):
-        fit_corr = self.param_to_fit(params)
-        return -self.reml_loglikelihood(fit_corr)
+        cov = self.params_to_cov(params)
+        return -self.reml_loglikelihood(cov)
 
     def fit(self):
         ''' given data and metadata T determine the best fit parameters '''
 
         # Initial guess for parameters
         init_params = np.concatenate((
-            np.zeros(self.variance_model_dmat.shape[1]), # x variance
-            np.zeros(self.variance_model_dmat.shape[1]), # y variance
+            np.zeros(self.variance_model_dmat.shape[1]), # y1 variance
+            np.zeros(self.variance_model_dmat.shape[1]), # y2 variance
             np.zeros(self.corr_model_dmat.shape[1]),
         ))
 
+        # Perform the optimization
+        # minimizing -loglikelihood (maximizing loglikelihood)
         def val(*args):
             val = self.objective(*args)
             return val
@@ -116,7 +118,7 @@ class CorrReg:
             tol = 1e-2,
         )
 
-        # parameters and error value
+        # Extract the parameters and error value
         self.params = res.x
         self.loglikelihood = res.fun
         self.opt_result = res
@@ -136,20 +138,20 @@ N_SAMPLES = 500
 T = np.linspace(0.0, 2*np.pi, N_SAMPLES)
 def true_cov(t):
     rho = np.tanh(0.3-0.3*np.cos(t)) # correlation
-    sigma_x = np.exp(0.5*np.sin(t))
-    sigma_y = np.exp(0.5)
-    return np.array([[sigma_x**2, sigma_x*sigma_y*rho], [sigma_x*sigma_y*rho, sigma_y**2]])
+    sigma_y1 = np.exp(0.5*np.sin(t))
+    sigma_y2 = np.exp(0.5)
+    return np.array([[sigma_y1**2, sigma_y1*sigma_y2*rho], [sigma_y1*sigma_y2*rho, sigma_y2**2]])
 test_data = np.array([rng.multivariate_normal( [5+np.sin(time), 3+np.cos(time)], true_cov(time)) for time in T])
 df = pandas.DataFrame(dict(
-    x = test_data[:,0],
-    y = test_data[:,1],
+    y1 = test_data[:,0],
+    y2 = test_data[:,1],
     t = T,
 ))
 
 cr = CorrReg(
     data = df,
-    x_var = "x",
-    y_var = "y",
+    y1_var = "y1",
+    y2_var = "y2",
     mean_model = "np.cos(t) + np.sin(t)",
     variance_model = "np.cos(t) + np.sin(t)",
     corr_model = "np.cos(t) + np.sin(t)",
