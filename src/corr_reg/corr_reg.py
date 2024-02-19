@@ -57,18 +57,12 @@ class CorrReg:
         self.corr_model = corr_model
         self.corr_model_dmat = patsy.dmatrix(self.corr_model, self.data)
 
-    def reml_loglikelihood(self, cov) -> float:
-        ''' Log-likelihood of the given correlation parameters after restricting to ReML
+        self.params = None
+        self.mean_model_params = None
 
-        See "Bayesian inference for variance components using only error contrasts" Harville 1974
-        https://www.jstor.org/stable/2334370
-        and
-        https://xiuming.info/docs/tutorials/reml.pdf
-        '''
-
-        # Extract the covariance terms
+    def _compute_beta_H_xhix(self, cov):
+        ''' Inner function to compute most of the values needed for REML likelihood '''
         rho, sigma_y1, sigma_y2 = cov
-        N_samples = rho.shape[0]
 
         # Number of predictors for mean model
         k = self.mean_model_dmat.shape[1]
@@ -102,6 +96,36 @@ class CorrReg:
         #G = H_inv @ X @ XHiX_inv
         G = np.einsum("ijk,il,kslm->ijm", H_inv, X, XHiX_inv)
         beta_hat = np.moveaxis(G, 0, 2) @ self.dependent_data[:, :, None]
+        return X, H, H_inv, beta_hat, XHiX
+
+    def compute_beta_hat(self, cov=None):
+        ''' Compute the estimated value of beta (the mean model parameters) for both y1 and y2
+
+        This value dipends upon the covariance matrix, by default used the fit value if any.
+        '''
+        if cov is None:
+            cov = self.params_to_cov(self.params)
+        _, _, _, beta_hat, _ = self._compute_beta_H_xhix(cov)
+        return beta_hat
+
+    def reml_loglikelihood(self, cov) -> float:
+        ''' Log-likelihood of the given correlation parameters after restricting to ReML
+
+        See "Bayesian inference for variance components using only error contrasts" Harville 1974
+        https://www.jstor.org/stable/2334370
+        and
+        https://xiuming.info/docs/tutorials/reml.pdf
+        '''
+
+        N_samples = cov[0].shape[0]
+
+        # Obatin:
+        # X - matrix of independent variables
+        # H - the covariance matrix
+        # H_inv - its inverse
+        # beta_hat - the mean model parameters for both y1 and y2
+        # XHiX - the inner product of X and itself under the H_inv metric
+        X, H, H_inv, beta_hat, XHiX = self._compute_beta_H_xhix(cov)
 
         # Compute fit values and residual size
         Y_hat = np.einsum("ij,kjl->ki", X ,beta_hat)
@@ -170,6 +194,7 @@ class CorrReg:
         self.params = res.x
         self.loglikelihood = res.fun
         self.opt_result = res
+        self.mean_model_params = self.compute_beta_hat()[:,:,0]
         return self
 
     def summary(self) -> str:
@@ -185,16 +210,22 @@ class CorrReg:
             "--------",
             self.opt_result.message,
             "--------",
+            "Mean model:",
+            pandas.DataFrame([(name, val1, val2)
+                    for name, val1, val2 in zip(self.mean_model_dmat.design_info.column_names, self.mean_model_params[0], self.mean_model_params[1])],
+                columns = ["Term", self.y1, self.y2])
+                .to_string(index=False),
+            "--------",
             "Standard deviations model:",
             pandas.DataFrame([(name, val1, val2)
                     for name, val1, val2 in zip(self.variance_model_dmat.design_info.column_names, sigma_y1, sigma_y2)],
-                columns = ["Variable", self.y1, self.y2])
+                columns = ["Term", self.y1, self.y2])
                 .to_string(index=False),
             "--------",
             "Correlation model:",
             pandas.DataFrame([(name, val)
                     for name, val in zip(self.corr_model_dmat.design_info.column_names, rho)],
-                columns = ["Variable", "Rho"])
+                columns = ["Term", "Rho"])
                 .to_string(index=False),
         ]
         return '\n'.join(lines)
@@ -233,4 +264,4 @@ cr = CorrReg(
     variance_model = "cos(t) + sin(t)",
     corr_model = "cos(t) + sin(t)",
 ).fit()
-print(cr.opt_result)
+print(cr.summary())
