@@ -2,6 +2,7 @@ import numpy as np
 import patsy
 import pandas
 import scipy.optimize
+import scipy.stats
 
 class CorrReg:
     ''' Results of a Correlation Regression
@@ -117,8 +118,6 @@ class CorrReg:
         https://xiuming.info/docs/tutorials/reml.pdf
         '''
 
-        N_samples = cov[0].shape[0]
-
         # Obatin:
         # X - matrix of independent variables
         # H - the covariance matrix
@@ -138,7 +137,7 @@ class CorrReg:
             np.sum(np.log(np.linalg.det(H)), axis=0)
             + np.log(np.linalg.det(XHiX))
             + np.sum(mahalanobis, axis=0)
-        ) / N_samples
+        )
         return log_like
 
     def params_to_cov(self, params):
@@ -162,7 +161,8 @@ class CorrReg:
         Computes the objective function to be minimized for given values of `params`
         '''
         cov = self.params_to_cov(params)
-        return -self.reml_loglikelihood(cov)
+        N_samples = cov[0].shape[0]
+        return -self.reml_loglikelihood(cov) / N_samples
 
     def fit(self):
         '''Run the REML fit to find the best parameters
@@ -191,8 +191,9 @@ class CorrReg:
         )
 
         # Extract the parameters and error value
+        N_samples = self.data.shape[0]
         self.params = res.x
-        self.loglikelihood = res.fun
+        self.loglikelihood = -res.fun * N_samples
         self.opt_result = res
         self.mean_model_params = self.compute_beta_hat()[:,:,0]
         return self
@@ -230,6 +231,29 @@ class CorrReg:
         ]
         return '\n'.join(lines)
 
+    def likelihood_ratio_test(self, nested_model: "CorrReg") -> float:
+        ''' Compute a p-value for a likelihood ratio test
+
+        Parameters:
+            nested_model: a model fit to the same data, with the same mean model
+                but smaller variance and/or correlation models than this model
+
+        Returns:
+            p-value: Likelihood ratio test p-value
+        '''
+        if not np.array_equal(nested_model.mean_model_dmat, self.mean_model_dmat):
+            raise ValueError("Likelihood ratio tests assumes that the mean models are the same, but provided nested model did not match")
+        # TODO: check that nested_model is indeed nested?
+
+        LR = 2*(self.loglikelihood - nested_model.loglikelihood)
+        this_dof = self.corr_model_dmat.shape[1] + 2*self.variance_model_dmat.shape[1]
+        nested_dof = nested_model.corr_model_dmat.shape[1] + 2*nested_model.variance_model_dmat.shape[1]
+        if nested_dof >= this_dof:
+            raise ValueError("Provided model is not nested within the reference model for the likelihood ratio test")
+
+        dof = this_dof - nested_dof
+
+        return scipy.stats.chi2(dof).sf(LR)
 
 def split_array(array, lengths):
     ''' For a given array x, split the first axis into pieces of the given length '''
@@ -265,3 +289,13 @@ cr = CorrReg(
     corr_model = "cos(t) + sin(t)",
 ).fit()
 print(cr.summary())
+
+cr_restricted = CorrReg(
+    data = df,
+    y1 = "y1",
+    y2 = "y2",
+    mean_model = "cos(t) + sin(t)",
+    variance_model = "cos(t) + sin(t)",
+    corr_model = "1",
+).fit()
+print(f"P-value of the correlation model compared to the constant model:\n{cr.likelihood_ratio_test(cr_restricted)}")
