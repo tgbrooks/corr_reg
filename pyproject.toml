@@ -3,12 +3,12 @@ requires = ['setuptools>=65.0']
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "CorrReg"
+name = "corr_reg"
 version = "0.1.0"
 authors = [
   { name="Thomas Brooks" },
 ]
-description = "CorrReg: regression of correlation values"
+description = "corr_reg: regression of correlation values"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
