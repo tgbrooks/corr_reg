@@ -135,7 +135,7 @@ class CorrReg:
         # Normalize by the number of samples to make convergence criteria more consistent across studies
         log_like = -1/2*(
             np.sum(np.log(np.linalg.det(H)), axis=0)
-            + np.log(np.linalg.det(XHiX))
+            + log_det(XHiX)
             + np.sum(mahalanobis, axis=0)
         )
         return log_like
@@ -191,7 +191,7 @@ class CorrReg:
         )
 
         # Extract the parameters and error value
-        N_samples = self.data.shape[0]
+        N_samples = self.dependent_data.shape[1]
         self.params = res.x
         self.loglikelihood = -res.fun * N_samples
         self.opt_result = res
@@ -262,6 +262,14 @@ def split_array(array, lengths):
     for length in lengths:
         yield array[start:start+length]
         start += length
+
+def log_det(pos_def_matrix):
+    ''' Compute the log of the determinant for a positive definite matrix via Cholesky decomposition
+
+    Avoids overflow that commonly occurs for np.log(np.linalg.det(pos_def_matrix))
+    '''
+    A = np.linalg.cholesky(pos_def_matrix)
+    return 2*np.sum(np.log(np.diag(A)))
 
 
 from numpy import cos, sin, exp, tanh
