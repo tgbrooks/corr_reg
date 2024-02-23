@@ -1,8 +1,10 @@
-import numpy as np
+#import numpy as np
 import patsy
 import pandas
 import scipy.optimize
 import scipy.stats
+import jax.numpy as np
+import jax
 
 class CorrReg:
     ''' Results of a Correlation Regression
@@ -51,53 +53,18 @@ class CorrReg:
 
         self.mean_model = mean_model
         self.mean_model_dmat = patsy.dmatrix(self.mean_model, self.data)
+        self.mean_model_dmat_array = np.asarray(self.mean_model_dmat)
 
         self.variance_model = variance_model
         self.variance_model_dmat = patsy.dmatrix(self.variance_model, self.data)
+        self.variance_model_dmat_array = np.asarray(self.variance_model_dmat)
 
         self.corr_model = corr_model
         self.corr_model_dmat = patsy.dmatrix(self.corr_model, self.data)
+        self.corr_model_dmat_array = np.asarray(self.corr_model_dmat)
 
         self.params = None
         self.mean_model_params = None
-
-    def _compute_beta_H_xhix(self, cov):
-        ''' Inner function to compute most of the values needed for REML likelihood '''
-        rho, sigma_y1, sigma_y2 = cov
-
-        # Number of predictors for mean model
-        k = self.mean_model_dmat.shape[1]
-
-        # Covariance matrix of y1 and y2
-        H = np.moveaxis(
-            np.array([[sigma_y1**2, sigma_y1*sigma_y2*rho],
-                       [sigma_y1*sigma_y2*rho, sigma_y2**2]]),
-            2,
-            0
-        )
-        # Inverse correlation matrix - gives distance metric for the residuals
-        H_inv = np.linalg.inv(H)
-
-        # X is the matrix of independent regressor values
-        X = np.array(self.mean_model_dmat)
-        # Inner product of X with itself using H^-1 as the metric
-        XHiX = np.einsum("ij,ik,ilm->jklm", X, X, H_inv) # k x k x 2 x 2
-        XHiX = np.block([ # 2k x 2k
-            [XHiX[:,:,0,0], XHiX[:,:,0,1]],
-            [XHiX[:,:,1,0], XHiX[:,:,1,1]],
-        ])
-        XHiX_inv = np.linalg.inv(XHiX) # 2k x 2k
-        XHiX_inv = np.array([  # 2 x 2 x k x k
-            [XHiX_inv[:k,:k], XHiX_inv[:k, k:]],
-            [XHiX_inv[k:,:k], XHiX_inv[k:, k:]],
-        ])
-
-        # Estimate the parameters of the models for the linear model of y1 and y2 (mean value models)
-        # using the specified covariance matrix
-        #G = H_inv @ X @ XHiX_inv
-        G = np.einsum("ijk,il,kslm->ijm", H_inv, X, XHiX_inv)
-        beta_hat = np.moveaxis(G, 0, 2) @ self.dependent_data[:, :, None]
-        return X, H, H_inv, beta_hat, XHiX
 
     def compute_beta_hat(self, cov=None):
         ''' Compute the estimated value of beta (the mean model parameters) for both y1 and y2
@@ -106,7 +73,11 @@ class CorrReg:
         '''
         if cov is None:
             cov = self.params_to_cov(self.params)
-        _, _, _, beta_hat, _ = self._compute_beta_H_xhix(cov)
+
+        # X is the matrix of independent regressor values
+        X = self.mean_model_dmat_array
+        Y = self.dependent_data
+        _, _, beta_hat, _ = _compute_beta_H_xhix(cov, X, Y)
         return beta_hat
 
     def reml_loglikelihood(self, cov) -> float:
@@ -118,51 +89,31 @@ class CorrReg:
         https://xiuming.info/docs/tutorials/reml.pdf
         '''
 
-        # Obatin:
-        # X - matrix of independent variables
-        # H - the covariance matrix
-        # H_inv - its inverse
-        # beta_hat - the mean model parameters for both y1 and y2
-        # XHiX - the inner product of X and itself under the H_inv metric
-        X, H, H_inv, beta_hat, XHiX = self._compute_beta_H_xhix(cov)
+        # X is the matrix of independent regressor values
+        X = self.mean_model_dmat_array
+        # Y is the matrix of dependent values
+        Y = self.dependent_data
 
-        # Compute fit values and residual size
-        Y_hat = np.einsum("ij,kjl->ki", X ,beta_hat)
-        resid = (self.dependent_data - Y_hat) # Y - Y_hat
-        mahalanobis = np.einsum("ji,ijk,ki->i", resid, H_inv, resid) # (Y - Y_hat)^T @ H_inv @ (Y - Y_hat)
-
-        # Compute the full REML log likelihood
-        # Normalize by the number of samples to make convergence criteria more consistent across studies
-        log_like = -1/2*(
-            np.sum(np.log(np.linalg.det(H)), axis=0)
-            + log_det(XHiX)
-            + np.sum(mahalanobis, axis=0)
-        )
-        return log_like
+        return _reml_loglikelihood(cov, X, Y)
 
     def params_to_cov(self, params):
         ''' Converts parameters to cov components
 
         Returns: rho (correlation), sigma_y1 and sigma_y2 (variances)
         '''
-        # Separate out the parts of the params
-        param_part_lengths = [self.variance_model_dmat.shape[1], self.variance_model_dmat.shape[1], self.corr_model_dmat.shape[1]]
-        y1_variance_params, y2_variance_params, corr_params = split_array(params, param_part_lengths)
-
-        # The three covariance parameters (correlation and two standard deviations)
-        rho = np.tanh(self.corr_model_dmat @ corr_params)
-        sigma_y1 = np.exp(self.variance_model_dmat @ y1_variance_params)
-        sigma_y2 = np.exp(self.variance_model_dmat @ y2_variance_params)
-
-        return (rho, sigma_y1, sigma_y2)
+        return _params_to_cov(params, self.variance_model_dmat_array, self.corr_model_dmat_array)
 
     def objective(self, params):
         '''
         Computes the objective function to be minimized for given values of `params`
         '''
-        cov = self.params_to_cov(params)
-        N_samples = cov[0].shape[0]
-        return -self.reml_loglikelihood(cov) / N_samples
+        return _objective(
+            params,
+            self.dependent_data,
+            self.mean_model_dmat_array,
+            self.variance_model_dmat_array,
+            self.corr_model_dmat_array
+        )
 
     def fit(self):
         '''Run the REML fit to find the best parameters
@@ -180,14 +131,18 @@ class CorrReg:
 
         # Perform the optimization
         # minimizing -loglikelihood (maximizing loglikelihood)
-        def val(*args):
-            val = self.objective(*args)
-            return val
         res = scipy.optimize.minimize(
-            fun = val,
+            fun = _objective_and_grad_jit,
             x0 = init_params,
             method = "BFGS",
             tol = 1e-2,
+            jac = True,
+            args=(
+                self.dependent_data,
+                self.mean_model_dmat_array,
+                self.variance_model_dmat_array,
+                self.corr_model_dmat_array
+            )
         )
 
         # Extract the parameters and error value
@@ -271,9 +226,93 @@ def log_det(pos_def_matrix):
     A = np.linalg.cholesky(pos_def_matrix)
     return 2*np.sum(np.log(np.diag(A)))
 
+def _compute_beta_H_xhix(cov, X, Y):
+    ''' Inner function to compute most of the values needed for REML likelihood '''
+    rho, sigma_y1, sigma_y2 = cov
 
-from numpy import cos, sin, exp, tanh
-rng = np.random.default_rng(1)
+    # Number of predictors for mean model
+    k = X.shape[1]
+
+    # Covariance matrix of y1 and y2
+    H = np.moveaxis(
+        np.array([[sigma_y1**2, sigma_y1*sigma_y2*rho],
+                    [sigma_y1*sigma_y2*rho, sigma_y2**2]]),
+        2,
+        0
+    )
+    # Inverse correlation matrix - gives distance metric for the residuals
+    H_inv = np.linalg.inv(H)
+    # Inner product of X with itself using H^-1 as the metric
+    XHiX = np.einsum("ij,ik,ilm->jklm", X, X, H_inv) # k x k x 2 x 2
+    XHiX = np.block([ # 2k x 2k
+        [XHiX[:,:,0,0], XHiX[:,:,0,1]],
+        [XHiX[:,:,1,0], XHiX[:,:,1,1]],
+    ])
+    XHiX_inv = np.linalg.inv(XHiX) # 2k x 2k
+    XHiX_inv = np.array([  # 2 x 2 x k x k
+        [XHiX_inv[:k,:k], XHiX_inv[:k, k:]],
+        [XHiX_inv[k:,:k], XHiX_inv[k:, k:]],
+    ])
+
+    # Estimate the parameters of the models for the linear model of y1 and y2 (mean value models)
+    # using the specified covariance matrix
+    #G = H_inv @ X @ XHiX_inv
+    G = np.einsum("ijk,il,kslm->ijm", H_inv, X, XHiX_inv)
+    beta_hat = np.moveaxis(G, 0, 2) @ Y[:, :, None]
+    return H, H_inv, beta_hat, XHiX
+
+def _reml_loglikelihood(cov, X, Y) -> float:
+    ''' inner function to compute the reml loglikelihood '''
+
+    # Obatin:
+    # H - the covariance matrix
+    # H_inv - its inverse
+    # beta_hat - the mean model parameters for both y1 and y2
+    # XHiX - the inner product of X and itself under the H_inv metric
+    H, H_inv, beta_hat, XHiX = _compute_beta_H_xhix(cov, X, Y)
+
+    # Compute fit values and residual size
+    Y_hat = np.einsum("ij,kjl->ki", X ,beta_hat)
+    resid = (Y - Y_hat) # Y - Y_hat
+    mahalanobis = np.einsum("ji,ijk,ki->i", resid, H_inv, resid) # (Y - Y_hat)^T @ H_inv @ (Y - Y_hat)
+
+    # Compute the full REML log likelihood
+    # Normalize by the number of samples to make convergence criteria more consistent across studies
+    log_like = -1/2*(
+        np.sum(np.log(np.linalg.det(H)), axis=0)
+        + log_det(XHiX)
+        + np.sum(mahalanobis, axis=0)
+    )
+    return log_like
+
+def _params_to_cov(params, variance_model_dmat, corr_model_dmat):
+    ''' Inner function extracting covariance into parameters
+    '''
+    # Separate out the parts of the params
+    param_part_lengths = [variance_model_dmat.shape[1], variance_model_dmat.shape[1], corr_model_dmat.shape[1]]
+    y1_variance_params, y2_variance_params, corr_params = split_array(params, param_part_lengths)
+
+    # The three covariance parameters (correlation and two standard deviations)
+    rho = np.tanh(corr_model_dmat @ corr_params)
+    sigma_y1 = np.exp(variance_model_dmat @ y1_variance_params)
+    sigma_y2 = np.exp(variance_model_dmat @ y2_variance_params)
+
+    return (rho, sigma_y1, sigma_y2)
+
+def _objective(params, Y, mean_model_dmat, variance_model_dmat, corr_model_dmat):
+    '''
+    Inner function for the objective function to be minimized for given values of `params`
+    '''
+    cov = _params_to_cov(params, variance_model_dmat, corr_model_dmat)
+    N_samples = cov[0].shape[0]
+    return -_reml_loglikelihood(cov, mean_model_dmat, Y) / N_samples
+
+_objective_and_grad = jax.value_and_grad(_objective, argnums=0)
+_objective_and_grad_jit = jax.jit(_objective_and_grad)
+
+
+from numpy import cos, sin, exp, tanh, random
+rng = random.default_rng(1)
 N_SAMPLES = 500
 T = np.linspace(0.0, 2*np.pi, N_SAMPLES)
 def true_cov(t):
