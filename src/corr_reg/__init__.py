@@ -1,1 +1,1 @@
-from .main import CorrReg
+from .main import CorrReg, multi_corr_reg

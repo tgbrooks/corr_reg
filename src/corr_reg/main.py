@@ -1,4 +1,4 @@
-#import numpy as np
+import copy
 import patsy
 import pandas
 import scipy.optimize
@@ -310,6 +310,47 @@ def _objective(params, Y, mean_model_dmat, variance_model_dmat, corr_model_dmat)
 _objective_and_grad = jax.value_and_grad(_objective, argnums=0)
 _objective_and_grad_jit = jax.jit(_objective_and_grad)
 
+def multi_corr_reg(data, dependent_vars, mean_model, variance_model, corr_model):
+    '''
+    Runs the same CorrReg model for each pair of variables in `dependent_vars`.
+
+    Somewhat faster than running each of these separately.
+
+    Parameters:
+        data: a dataframe giving all variables used in the model
+        dependent_vars: a list of variables in `data` to pairwise compare
+        mean_model: a one-sided formula string giving the formula for the means
+        variance_model: a one-sided formula string giving the formula for the variances
+        corr_model: a one-sided formula string giving the formula for the correlation
+    '''
+    assert len(dependent_vars) >= 2, "Must provide at least two dependent variables to compare"
+    base_corr_reg = CorrReg(
+        data = data,
+        y1 = dependent_vars[0],
+        y2 = dependent_vars[1],
+        mean_model = mean_model,
+        variance_model = variance_model,
+        corr_model = corr_model,
+    )
+    results = []
+    for i, y1 in enumerate(dependent_vars):
+        for j, y2 in enumerate(dependent_vars):
+            if i <= j:
+                continue
+            cr = copy.copy(base_corr_reg)
+            cr.y1 = y1
+            cr.y2 = y2
+            cr.dependent_data = np.vstack((
+                np.asarray(data[y1]),
+                np.asarray(data[y2]),
+            ))
+            cr.fit()
+            results.append({
+                "y1": y1,
+                "y2": y2,
+                "res": cr,
+            })
+    return results
 
 from numpy import cos, sin, exp, tanh, random
 rng = random.default_rng(1)
