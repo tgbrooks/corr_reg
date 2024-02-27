@@ -77,7 +77,7 @@ class CorrReg:
         # X is the matrix of independent regressor values
         X = self.mean_model_dmat_array
         Y = self.dependent_data
-        _, _, beta_hat, _ = _compute_beta_H_xhix(cov, X, Y)
+        _, _, beta_hat, _ = _compute_beta_H_xhix_jit(cov, X, Y)
         return beta_hat
 
     def reml_loglikelihood(self, cov) -> float:
@@ -307,6 +307,7 @@ def _objective(params, Y, mean_model_dmat, variance_model_dmat, corr_model_dmat)
     N_samples = cov[0].shape[0]
     return -_reml_loglikelihood(cov, mean_model_dmat, Y) / N_samples
 
+_compute_beta_H_xhix_jit = jax.jit(_compute_beta_H_xhix)
 _objective_and_grad = jax.value_and_grad(_objective, argnums=0)
 _objective_and_grad_jit = jax.jit(_objective_and_grad)
 
