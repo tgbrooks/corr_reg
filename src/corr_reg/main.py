@@ -226,6 +226,7 @@ def log_det(pos_def_matrix):
     A = np.linalg.cholesky(pos_def_matrix)
     return 2*np.sum(np.log(np.diag(A)))
 
+@jax.jit
 def _compute_beta_H_xhix(cov, X, Y):
     ''' Inner function to compute most of the values needed for REML likelihood '''
     rho, sigma_y1, sigma_y2 = cov
@@ -261,6 +262,7 @@ def _compute_beta_H_xhix(cov, X, Y):
     beta_hat = np.moveaxis(G, 0, 2) @ Y[:, :, None]
     return H, H_inv, beta_hat, XHiX
 
+@jax.jit
 def _reml_loglikelihood(cov, X, Y) -> float:
     ''' inner function to compute the reml loglikelihood '''
 
