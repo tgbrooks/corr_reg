@@ -172,7 +172,7 @@ class CorrReg:
                 columns = ["Term", self.y1, self.y2])
                 .to_string(index=False),
             "--------",
-            "Standard deviations model:",
+            "Variance model:",
             pandas.DataFrame([(name, val1, val2)
                     for name, val1, val2 in zip(self.variance_model_dmat.design_info.column_names, sigma_y1, sigma_y2)],
                 columns = ["Term", self.y1, self.y2])
@@ -354,39 +354,3 @@ def multi_corr_reg(data, dependent_vars, mean_model, variance_model, corr_model)
                 "res": cr,
             })
     return results
-
-from numpy import cos, sin, exp, tanh, random
-rng = random.default_rng(1)
-N_SAMPLES = 500
-T = np.linspace(0.0, 2*np.pi, N_SAMPLES)
-def true_cov(t):
-    rho = tanh(0.3-0.3*cos(t)) # correlation
-    sigma_y1 = exp(0.5*sin(t))
-    sigma_y2 = exp(0.5)
-    return np.array([[sigma_y1**2, sigma_y1*sigma_y2*rho], [sigma_y1*sigma_y2*rho, sigma_y2**2]])
-test_data = np.array([rng.multivariate_normal( [5+sin(time), 3+cos(time)], true_cov(time)) for time in T])
-df = pandas.DataFrame(dict(
-    y1 = test_data[:,0],
-    y2 = test_data[:,1],
-    t = T,
-))
-
-cr = CorrReg(
-    data = df,
-    y1 = "y1",
-    y2 = "y2",
-    mean_model = "cos(t) + sin(t)",
-    variance_model = "cos(t) + sin(t)",
-    corr_model = "cos(t) + sin(t)",
-).fit()
-print(cr.summary())
-
-cr_restricted = CorrReg(
-    data = df,
-    y1 = "y1",
-    y2 = "y2",
-    mean_model = "cos(t) + sin(t)",
-    variance_model = "cos(t) + sin(t)",
-    corr_model = "1",
-).fit()
-print(f"P-value of the correlation model compared to the constant model:\n{cr.likelihood_ratio_test(cr_restricted)}")
