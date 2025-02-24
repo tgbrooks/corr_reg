@@ -52,15 +52,15 @@ class CorrReg:
         self.y2 = y2
 
         self.mean_model = mean_model
-        self.mean_model_dmat = patsy.dmatrix(self.mean_model, self.data)
+        self.mean_model_dmat = patsy.dmatrix(self.mean_model, self.data, eval_env=1)
         self.mean_model_dmat_array = np.asarray(self.mean_model_dmat)
 
         self.variance_model = variance_model
-        self.variance_model_dmat = patsy.dmatrix(self.variance_model, self.data)
+        self.variance_model_dmat = patsy.dmatrix(self.variance_model, self.data, eval_env=1)
         self.variance_model_dmat_array = np.asarray(self.variance_model_dmat)
 
         self.corr_model = corr_model
-        self.corr_model_dmat = patsy.dmatrix(self.corr_model, self.data)
+        self.corr_model_dmat = patsy.dmatrix(self.corr_model, self.data, eval_env=1)
         self.corr_model_dmat_array = np.asarray(self.corr_model_dmat)
 
         self.params = None
