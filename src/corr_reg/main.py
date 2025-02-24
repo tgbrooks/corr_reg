@@ -69,7 +69,7 @@ class CorrReg:
     def compute_beta_hat(self, cov=None):
         ''' Compute the estimated value of beta (the mean model parameters) for both y1 and y2
 
-        This value dipends upon the covariance matrix, by default used the fit value if any.
+        This value depends upon the covariance matrix, by default used the fit value if any.
         '''
         if cov is None:
             cov = self.params_to_cov(self.params)
@@ -209,6 +209,31 @@ class CorrReg:
         dof = this_dof - nested_dof
 
         return scipy.stats.chi2(dof).sf(LR)
+
+    def predict(self, data):
+        """
+        Give the predicted fit values corresponding to the dependent variables in `data`
+        """
+        # Construct the new model matrices from dependent variables
+        mean_model_dmat = patsy.dmatrix(self.mean_model, data, eval_env=1)
+        mean_model_dmat_array = np.asarray(mean_model_dmat)
+        variance_model_dmat = patsy.dmatrix(self.variance_model, data, eval_env=1)
+        variance_model_dmat_array = np.asarray(variance_model_dmat)
+        corr_model_dmat = patsy.dmatrix(self.corr_model, data, eval_env=1)
+        corr_model_dmat_array = np.asarray(corr_model_dmat)
+
+        cov = _params_to_cov(self.params, variance_model_dmat_array, corr_model_dmat_array)
+        beta_H = self.compute_beta_hat()
+
+        y1_fit = mean_model_dmat_array @ beta_H[0]
+        y2_fit = mean_model_dmat_array @ beta_H[1]
+        results = pandas.DataFrame(data)
+        results[f'{self.y1}_fit'] = y1_fit
+        results[f'{self.y2}_fit'] = y2_fit
+        results[f'{self.y1}_variance'] = cov[1]
+        results[f'{self.y2}_variance'] = cov[2]
+        results[f'correlation'] = cov[0]
+        return results
 
 def split_array(array, lengths):
     ''' For a given array x, split the first axis into pieces of the given length '''
