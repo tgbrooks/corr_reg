@@ -66,13 +66,13 @@ class CorrReg:
         self.params = None
         self.mean_model_params = None
 
-    def compute_beta_hat(self, cov=None):
+    def _compute_beta_hat(self, cov=None):
         ''' Compute the estimated value of beta (the mean model parameters) for both y1 and y2
 
         This value depends upon the covariance matrix, by default used the fit value if any.
         '''
         if cov is None:
-            cov = self.params_to_cov(self.params)
+            cov = self._params_to_cov(self.params)
 
         # X is the matrix of independent regressor values
         X = self.mean_model_dmat_array
@@ -96,24 +96,12 @@ class CorrReg:
 
         return _reml_loglikelihood(cov, X, Y)
 
-    def params_to_cov(self, params):
+    def _params_to_cov(self, params):
         ''' Converts parameters to cov components
 
         Returns: rho (correlation), sigma_y1 and sigma_y2 (variances)
         '''
         return _params_to_cov(params, self.variance_model_dmat_array, self.corr_model_dmat_array)
-
-    def objective(self, params):
-        '''
-        Computes the objective function to be minimized for given values of `params`
-        '''
-        return _objective(
-            params,
-            self.dependent_data,
-            self.mean_model_dmat_array,
-            self.variance_model_dmat_array,
-            self.corr_model_dmat_array
-        )
 
     def fit(self):
         '''Run the REML fit to find the best parameters
@@ -150,7 +138,7 @@ class CorrReg:
         self.params = res.x
         self.loglikelihood = -res.fun * N_samples
         self.opt_result = res
-        self.mean_model_params = self.compute_beta_hat()[:,:,0]
+        self.mean_model_params = self._compute_beta_hat()[:,:,0]
         return self
 
     def summary(self) -> str:
@@ -223,7 +211,7 @@ class CorrReg:
         corr_model_dmat_array = np.asarray(corr_model_dmat)
 
         cov = _params_to_cov(self.params, variance_model_dmat_array, corr_model_dmat_array)
-        beta_H = self.compute_beta_hat()
+        beta_H = self._compute_beta_hat()
 
         y1_fit = mean_model_dmat_array @ beta_H[0]
         y2_fit = mean_model_dmat_array @ beta_H[1]
