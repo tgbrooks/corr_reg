@@ -154,23 +154,23 @@ class CorrReg:
             "--------",
             self.opt_result.message,
             "--------",
-            "Mean model:",
-            pandas.DataFrame([(name, val1, val2)
-                    for name, val1, val2 in zip(self.mean_model_dmat.design_info.column_names, self.mean_model_params[0], self.mean_model_params[1])],
-                columns = ["Term", self.y1, self.y2])
-                .to_string(index=False),
-            "--------",
-            "Variance model:",
-            pandas.DataFrame([(name, val1, val2)
-                    for name, val1, val2 in zip(self.variance_model_dmat.design_info.column_names, sigma_y1, sigma_y2)],
-                columns = ["Term", self.y1, self.y2])
-                .to_string(index=False),
-            "--------",
-            "Correlation model:",
-            pandas.DataFrame([(name, val)
-                    for name, val in zip(self.corr_model_dmat.design_info.column_names, rho)],
-                columns = ["Term", "Rho"])
-                .to_string(index=False),
+            pandas.DataFrame([(name, val1, val2, sd1, sd2, rho)
+                    for name, val1, val2, sd1, sd2, rho in zip(
+                        self.mean_model_dmat.design_info.column_names,
+                        self.mean_model_params[0],
+                        self.mean_model_params[1],
+                        sigma_y1,
+                        sigma_y2,
+                        rho,
+                    )],
+                columns = pandas.MultiIndex.from_tuples([
+                    ('Term', ''),
+                    ('Mean', self.y1),
+                    ('Mean', self.y2),
+                    ('SD', self.y1),
+                    ('SD', self.y2),
+                    ('correlation', '')
+                ])).to_string(index=False)
         ]
         return '\n'.join(lines)
 

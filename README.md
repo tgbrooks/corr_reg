@@ -74,25 +74,13 @@ Correlation model: arctanh(rho) ~ cos(t) + sin(t)
 --------
 Optimization terminated successfully.
 --------
-Mean model:
-     Term            y1         y2
-Intercept      4.990096  2.9040437
-   cos(t) -0.0024966225  1.0160536
-   sin(t)     1.0730464 0.16497436
---------
-Variance model:
-     Term        y1        y2
-Intercept -0.043525  0.498516
-   cos(t) -0.045300 -0.018338
-   sin(t)  0.304450  0.020142
---------
-Correlation model:
-     Term       Rho
-Intercept  0.279446
-   cos(t) -0.332866
-   sin(t)  0.000253
+     Term          Mean                   SD           correlation
+                     y1         y2        y1        y2
+Intercept      4.990097  2.9040432 -0.043525  0.498516    0.279446
+   cos(t) -0.0024949163  1.0160546 -0.045300 -0.018338   -0.332866
+   sin(t)      1.073043 0.16497499  0.304450  0.020142    0.000253
 P-value of the correlation model compared to the constant model:
-1.1132422734390535e-06
+1.1131759210062731e-06
 ```
 
 ## Installation
