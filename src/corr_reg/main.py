@@ -271,14 +271,14 @@ class CorrReg:
                 corr_model_dmat_array
             ))
             # Standard errors:
-            y1_var_se = np.einsum("ij,jk,ik->i", y1_var_dmat, inv_hess, y1_var_dmat)
-            y2_var_se = np.einsum("ij,jk,ik->i", y2_var_dmat, inv_hess, y2_var_dmat)
-            corr_se = np.einsum("ij,jk,ik->i", corr_dmat, inv_hess, corr_dmat)
+            y1_var_se = np.sqrt(np.einsum("ij,jk,ik->i", y1_var_dmat, inv_hess, y1_var_dmat))
+            y2_var_se = np.sqrt(np.einsum("ij,jk,ik->i", y2_var_dmat, inv_hess, y2_var_dmat))
+            corr_se = np.sqrt(np.einsum("ij,jk,ik->i", corr_dmat, inv_hess, corr_dmat))
 
-            results[f'{self.y1}_var_lower'] = np.exp(raw_sigma_y1 + lower_cutoff * y1_var_se)
-            results[f'{self.y1}_var_upper'] = np.exp(raw_sigma_y1 + upper_cutoff * y1_var_se)
-            results[f'{self.y2}_var_lower'] = np.exp(raw_sigma_y2 + lower_cutoff * y2_var_se)
-            results[f'{self.y2}_var_upper'] = np.exp(raw_sigma_y2 + upper_cutoff * y2_var_se)
+            results[f'{self.y1}_variance_lower'] = np.exp(raw_sigma_y1 + lower_cutoff * y1_var_se)
+            results[f'{self.y1}_variance_upper'] = np.exp(raw_sigma_y1 + upper_cutoff * y1_var_se)
+            results[f'{self.y2}_variance_lower'] = np.exp(raw_sigma_y2 + lower_cutoff * y2_var_se)
+            results[f'{self.y2}_variance_upper'] = np.exp(raw_sigma_y2 + upper_cutoff * y2_var_se)
             results['correlation_lower'] = np.tanh(raw_rho + lower_cutoff * corr_se)
             results['correlation_upper'] = np.tanh(raw_rho + upper_cutoff * corr_se)
         return results
