@@ -134,9 +134,8 @@ class CorrReg:
         )
 
         # Extract the parameters and error value
-        N_samples = self.dependent_data.shape[1]
         self.params = res.x
-        self.loglikelihood = -res.fun * N_samples
+        self.loglikelihood = -res.fun
         self.opt_result = res
         self.mean_model_params = self._compute_beta_hat()[:,:,0]
         return self
@@ -198,9 +197,18 @@ class CorrReg:
 
         return scipy.stats.chi2(dof).sf(LR)
 
-    def predict(self, data):
+    def predict(self, data, confidence_intervals=None):
         """
         Give the predicted fit values corresponding to the dependent variables in `data`
+
+        Parameters:
+            data: a dataframe of the dependent variable values to predict
+            confidence_intervals: value from 0-1 of which CI to compute if any (default: None)
+
+        Returns:
+            data frame containing fit (mean) values, variances, and correlation for y1 and y2
+            if confidence_intervals is specified, then also contains '_lower' and '_upper' columns
+            for the CI bounds of variance and correlations estimates.
         """
         # Construct the new model matrices from dependent variables
         mean_model_dmat = patsy.dmatrix(self.mean_model, data, eval_env=1)
@@ -210,7 +218,19 @@ class CorrReg:
         corr_model_dmat = patsy.dmatrix(self.corr_model, data, eval_env=1)
         corr_model_dmat_array = np.asarray(corr_model_dmat)
 
-        cov = _params_to_cov(self.params, variance_model_dmat_array, corr_model_dmat_array)
+        param_part_lengths = [variance_model_dmat.shape[1], variance_model_dmat.shape[1], corr_model_dmat.shape[1]]
+
+        y1_variance_params, y2_variance_params, corr_params = split_array(self.params, param_part_lengths)
+
+        # The three covariance parameters (correlation and two standard deviations)
+        raw_rho = corr_model_dmat @ corr_params
+        rho = np.tanh(raw_rho)
+        raw_sigma_y1 = variance_model_dmat @ y1_variance_params
+        sigma_y1 = np.exp(raw_sigma_y1)
+        raw_sigma_y2 = variance_model_dmat @ y2_variance_params
+        sigma_y2 = np.exp(raw_sigma_y2)
+
+        # Mean model parameters
         beta_H = self._compute_beta_hat()
 
         y1_fit = mean_model_dmat_array @ beta_H[0]
@@ -218,9 +238,45 @@ class CorrReg:
         results = pandas.DataFrame(data)
         results[f'{self.y1}_fit'] = y1_fit
         results[f'{self.y2}_fit'] = y2_fit
-        results[f'{self.y1}_variance'] = cov[1]
-        results[f'{self.y2}_variance'] = cov[2]
-        results[f'correlation'] = cov[0]
+        results[f'{self.y1}_variance'] = sigma_y1
+        results[f'{self.y2}_variance'] = sigma_y2
+        results[f'correlation'] = rho
+
+        if confidence_intervals is not None:
+            hess = _objective_hess(self.params, self.dependent_data, self.mean_model_dmat, self.variance_model_dmat, self.corr_model_dmat)
+            # NOTE: jax.numpy doens't throw if the matrix isn't invertible, it just gives infinities or bad results
+            inv_hess = np.linalg.inv(hess)
+            lower_cutoff, upper_cutoff = scipy.stats.norm().interval(confidence_intervals)
+
+            # X @ Hess @ X^T gives the standard errors for the two REML parts
+            # We build three different 'X's for y1 var, y2 var, and correlation
+            # leaving the others as zero
+            y1_var_dmat = np.hstack((
+                variance_model_dmat_array,
+                np.zeros_like(variance_model_dmat_array),
+                np.zeros_like(corr_model_dmat_array)
+            ))
+            y2_var_dmat = np.hstack((
+                np.zeros_like(variance_model_dmat_array),
+                variance_model_dmat_array,
+                np.zeros_like(corr_model_dmat_array)
+            ))
+            corr_dmat = np.hstack((
+                np.zeros_like(variance_model_dmat_array),
+                np.zeros_like(variance_model_dmat_array),
+                corr_model_dmat_array
+            ))
+            # Standard errors:
+            y1_var_se = np.einsum("ij,jk,ik->i", y1_var_dmat, inv_hess, y1_var_dmat)
+            y2_var_se = np.einsum("ij,jk,ik->i", y2_var_dmat, inv_hess, y2_var_dmat)
+            corr_se = np.einsum("ij,jk,ik->i", corr_dmat, inv_hess, corr_dmat)
+
+            results[f'{self.y1}_var_lower'] = np.exp(raw_sigma_y1 + lower_cutoff * y1_var_se)
+            results[f'{self.y1}_var_upper'] = np.exp(raw_sigma_y1 + upper_cutoff * y1_var_se)
+            results[f'{self.y2}_var_lower'] = np.exp(raw_sigma_y2 + lower_cutoff * y2_var_se)
+            results[f'{self.y2}_var_upper'] = np.exp(raw_sigma_y2 + upper_cutoff * y2_var_se)
+            results['correlation_lower'] = np.tanh(raw_rho + lower_cutoff * corr_se)
+            results['correlation_upper'] = np.tanh(raw_rho + upper_cutoff * corr_se)
         return results
 
 def split_array(array, lengths):
@@ -319,12 +375,12 @@ def _objective(params, Y, mean_model_dmat, variance_model_dmat, corr_model_dmat)
     Inner function for the objective function to be minimized for given values of `params`
     '''
     cov = _params_to_cov(params, variance_model_dmat, corr_model_dmat)
-    N_samples = cov[0].shape[0]
-    return -_reml_loglikelihood(cov, mean_model_dmat, Y) / N_samples
+    return -_reml_loglikelihood(cov, mean_model_dmat, Y)
 
 _compute_beta_H_xhix_jit = jax.jit(_compute_beta_H_xhix)
 _objective_and_grad = jax.value_and_grad(_objective, argnums=0)
 _objective_and_grad_jit = jax.jit(_objective_and_grad)
+_objective_hess = jax.hessian(_objective, argnums=0)
 
 def multi_corr_reg(data, dependent_vars, mean_model, variance_model, corr_model):
     '''
