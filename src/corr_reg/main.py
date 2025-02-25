@@ -134,8 +134,9 @@ class CorrReg:
         )
 
         # Extract the parameters and error value
+        N_samples = self.dependent_data.shape[1]
         self.params = res.x
-        self.loglikelihood = -res.fun
+        self.loglikelihood = -res.fun * N_samples
         self.opt_result = res
         self.mean_model_params = self._compute_beta_hat()[:,:,0]
         return self
@@ -210,6 +211,8 @@ class CorrReg:
             if confidence_intervals is specified, then also contains '_lower' and '_upper' columns
             for the CI bounds of variance and correlations estimates.
         """
+        N_samples = self.dependent_data.shape[1]
+
         # Construct the new model matrices from dependent variables
         mean_model_dmat = patsy.dmatrix(self.mean_model, data, eval_env=1)
         mean_model_dmat_array = np.asarray(mean_model_dmat)
@@ -243,7 +246,8 @@ class CorrReg:
         results[f'correlation'] = rho
 
         if confidence_intervals is not None:
-            hess = _objective_hess(self.params, self.dependent_data, self.mean_model_dmat, self.variance_model_dmat, self.corr_model_dmat)
+            # _objective is logLikelihood / N, so we have to remultiply by N
+            hess = _objective_hess(self.params, self.dependent_data, self.mean_model_dmat, self.variance_model_dmat, self.corr_model_dmat) * N_samples
             # NOTE: jax.numpy doens't throw if the matrix isn't invertible, it just gives infinities or bad results
             inv_hess = np.linalg.inv(hess)
             lower_cutoff, upper_cutoff = scipy.stats.norm().interval(confidence_intervals)
@@ -348,7 +352,6 @@ def _reml_loglikelihood(cov, X, Y) -> float:
     mahalanobis = np.einsum("ji,ijk,ki->i", resid, H_inv, resid) # (Y - Y_hat)^T @ H_inv @ (Y - Y_hat)
 
     # Compute the full REML log likelihood
-    # Normalize by the number of samples to make convergence criteria more consistent across studies
     log_like = -1/2*(
         np.sum(np.log(np.linalg.det(H)), axis=0)
         + log_det(XHiX)
@@ -375,7 +378,8 @@ def _objective(params, Y, mean_model_dmat, variance_model_dmat, corr_model_dmat)
     Inner function for the objective function to be minimized for given values of `params`
     '''
     cov = _params_to_cov(params, variance_model_dmat, corr_model_dmat)
-    return -_reml_loglikelihood(cov, mean_model_dmat, Y)
+    N_samples = cov[0].shape[0]
+    return -_reml_loglikelihood(cov, mean_model_dmat, Y) / N_samples
 
 _compute_beta_H_xhix_jit = jax.jit(_compute_beta_H_xhix)
 _objective_and_grad = jax.value_and_grad(_objective, argnums=0)
