@@ -214,15 +214,14 @@ class CorrReg:
         N_samples = self.dependent_data.shape[1]
 
         # Construct the new model matrices from dependent variables
-        mean_model_dmat = patsy.dmatrix(self.mean_model, data, eval_env=1)
+        mean_model_dmat = patsy.build_design_matrices([self.mean_model_dmat.design_info], data)[0]
         mean_model_dmat_array = np.asarray(mean_model_dmat)
-        variance_model_dmat = patsy.dmatrix(self.variance_model, data, eval_env=1)
+        variance_model_dmat = patsy.build_design_matrices([self.variance_model_dmat.design_info], data)[0]
         variance_model_dmat_array = np.asarray(variance_model_dmat)
-        corr_model_dmat = patsy.dmatrix(self.corr_model, data, eval_env=1)
+        corr_model_dmat = patsy.build_design_matrices([self.corr_model_dmat.design_info], data)[0]
         corr_model_dmat_array = np.asarray(corr_model_dmat)
 
-        param_part_lengths = [variance_model_dmat.shape[1], variance_model_dmat.shape[1], corr_model_dmat.shape[1]]
-
+        param_part_lengths = [self.variance_model_dmat.shape[1], self.variance_model_dmat.shape[1], self.corr_model_dmat.shape[1]]
         y1_variance_params, y2_variance_params, corr_params = split_array(self.params, param_part_lengths)
 
         # The three covariance parameters (correlation and two standard deviations)
