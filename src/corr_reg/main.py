@@ -207,9 +207,9 @@ class CorrReg:
             confidence_intervals: value from 0-1 of which CI to compute if any (default: None)
 
         Returns:
-            data frame containing fit (mean) values, variances, and correlation for y1 and y2
+            data frame containing fit (mean) values, standard deviances (SD), and correlation for y1 and y2
             if confidence_intervals is specified, then also contains '_lower' and '_upper' columns
-            for the CI bounds of variance and correlations estimates.
+            for the CI bounds of SD and correlations estimates.
         """
         N_samples = self.dependent_data.shape[1]
 
@@ -241,8 +241,8 @@ class CorrReg:
         results = pandas.DataFrame(data)
         results[f'{self.y1}_fit'] = y1_fit
         results[f'{self.y2}_fit'] = y2_fit
-        results[f'{self.y1}_variance'] = sigma_y1
-        results[f'{self.y2}_variance'] = sigma_y2
+        results[f'{self.y1}_SD'] = sigma_y1
+        results[f'{self.y2}_SD'] = sigma_y2
         results[f'correlation'] = rho
 
         if confidence_intervals is not None:
@@ -275,10 +275,10 @@ class CorrReg:
             y2_var_se = np.sqrt(np.einsum("ij,jk,ik->i", y2_var_dmat, inv_hess, y2_var_dmat))
             corr_se = np.sqrt(np.einsum("ij,jk,ik->i", corr_dmat, inv_hess, corr_dmat))
 
-            results[f'{self.y1}_variance_lower'] = np.exp(raw_sigma_y1 + lower_cutoff * y1_var_se)
-            results[f'{self.y1}_variance_upper'] = np.exp(raw_sigma_y1 + upper_cutoff * y1_var_se)
-            results[f'{self.y2}_variance_lower'] = np.exp(raw_sigma_y2 + lower_cutoff * y2_var_se)
-            results[f'{self.y2}_variance_upper'] = np.exp(raw_sigma_y2 + upper_cutoff * y2_var_se)
+            results[f'{self.y1}_SD_lower'] = np.exp(raw_sigma_y1 + lower_cutoff * y1_var_se)
+            results[f'{self.y1}_SD_upper'] = np.exp(raw_sigma_y1 + upper_cutoff * y1_var_se)
+            results[f'{self.y2}_SD_lower'] = np.exp(raw_sigma_y2 + lower_cutoff * y2_var_se)
+            results[f'{self.y2}_SD_upper'] = np.exp(raw_sigma_y2 + upper_cutoff * y2_var_se)
             results['correlation_lower'] = np.tanh(raw_rho + lower_cutoff * corr_se)
             results['correlation_upper'] = np.tanh(raw_rho + upper_cutoff * corr_se)
         return results
