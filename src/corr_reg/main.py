@@ -338,6 +338,13 @@ def _compute_beta_H_xhix(cov, X, Y):
 def _reml_loglikelihood(cov, X, Y) -> float:
     ''' inner function to compute the reml loglikelihood '''
 
+    # See: Harville, 1974 "Bayesian Inference for Variance Components Using Only Error Contrasts"
+    # http://www.jstor.org/stable/2334370
+    # Equation 3 provides REML likelihood for a multivariate normal model
+    # We implement the log of that here, except that we remove two constant
+    # terms since they don't impact likelihood differences (for log-likelihood tests)
+    # or the Fisher information matrix (second derivatives of log likelihood).
+
     # Obatin:
     # H - the covariance matrix
     # H_inv - its inverse
@@ -356,6 +363,8 @@ def _reml_loglikelihood(cov, X, Y) -> float:
         + log_det(XHiX)
         + np.sum(mahalanobis, axis=0)
     )
+    # NOTE: the above doesn't include two constant (wrt the parameters) terms from
+    #  log((2pi)^{-1/2(n-p)}  det{X^T X}^{1/2})
     return log_like
 
 def _params_to_cov(params, variance_model_dmat, corr_model_dmat):

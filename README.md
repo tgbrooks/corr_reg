@@ -11,7 +11,7 @@ CorrReg allows specifying typical regression formulas (such as `age * sex` or `c
 Specifically, `log(SD(y_i))` is modelled by the given variance formula and `arctanh(rho)` is modelled by the correlation formula, where `rho` is the correlation between `y1` and `y2` and `SD(y)` is the standard deviation of the variable.
 For both of these, these refer to the standard deviations and correlation of the *error term* of the variables conditional on the values of the independent variables.
 For example, if we are regressing versus age, then it is quite possible that `y1` and `y2` are independent (and so have 0 correlation) even if both are increasing with age, since the correlation would be of their values at a specific age.
-CorrReg is implemented using REML and assumes that these error terms are multivariate normally distributed.
+CorrReg is implemented using REML and assumes that these error terms are multivariate normally distributed, see [Harville, 1975](http://www.jstor.org/stable/2334370).
 
 ## Example
 ``` python
